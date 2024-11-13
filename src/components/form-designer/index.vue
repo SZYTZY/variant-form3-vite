@@ -10,27 +10,6 @@
 
 <template>
   <el-container class="main-container full-height">
-    <el-header class="main-header">
-      <div class="float-left main-title">
-        <img src="../../assets/vform-logo.png" @click="openHome">
-        <span class="bold">VForm 3</span> {{i18nt('application.productTitle')}} <span class="version-span">Ver {{vFormVersion}}</span></div>
-      <div class="float-right external-link">
-        <el-dropdown v-if="showLink('languageMenu')" :hide-timeout="2000" @command="handleLanguageChanged">
-          <span class="el-dropdown-link">{{curLangName}}<svg-icon icon-class="el-arrow-down" /></span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="zh-CN">{{i18nt('application.zh-CN')}}</el-dropdown-item>
-              <el-dropdown-item command="en-US">{{i18nt('application.en-US')}}</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-        <a v-if="showLink('externalLink')" href="javascript:void(0)" @click="(ev) => openUrl(ev, gitUrl)" target="_blank"><svg-icon icon-class="github" />{{i18nt('application.github')}}</a>
-        <a v-if="showLink('externalLink')" href="javascript:void(0)" @click="(ev) => openUrl(ev, docUrl)" target="_blank"><svg-icon icon-class="document" />{{i18nt('application.document')}}</a>
-        <a v-if="showLink('externalLink')" href="javascript:void(0)" @click="(ev) => openUrl(ev, chatUrl)" target="_blank">{{i18nt('application.qqGroup')}}</a>
-        <a v-if="showLink('externalLink')" href="javascript:void(0)" @click="(ev) => openUrl(ev, subScribeUrl)" target="_blank">
-          {{i18nt('application.subscription')}}<i class="el-icon-top-right"></i></a>
-      </div>
-    </el-header>
 
     <el-container>
       <el-aside class="side-panel">
@@ -39,7 +18,7 @@
 
       <el-container class="center-layout-container">
         <el-header class="toolbar-header">
-          <toolbar-panel :designer="designer" :global-dsv="globalDsv" ref="toolbarRef">
+          <toolbar-panel :designer="designer" :moduleTitle="moduleTitle" :global-dsv="globalDsv" ref="toolbarRef" @fnSave="fnSave" @fnClose="fnClose">
             <template v-for="(idx, slotName) in $slots" #[slotName]>
               <slot :name="slotName"></slot>
             </template>
@@ -98,7 +77,11 @@
         type: Array,
         default: () => []
       },
-
+      /* 设计器模块标题 */
+      moduleTitle: {
+        type: String,
+        default: ''
+      },
       designerConfig: {
         type: Object,
         default: () => {
@@ -111,16 +94,14 @@
 
             clearDesignerButton: true,  //是否显示清空设计器按钮
             previewFormButton: true,  //是否显示预览表单按钮
-            importJsonButton: true,  //是否显示导入JSON按钮
-            exportJsonButton: true,  //是否显示导出JSON器按钮
-            exportCodeButton: true,  //是否显示导出代码按钮
-            generateSFCButton: true,  //是否显示生成SFC按钮
-
-            toolbarMaxWidth: 450,  //设计器工具按钮栏最大宽度（单位像素）
-            toolbarMinWidth: 300,  //设计器工具按钮栏最小宽度（单位像素）
+            importJsonButton: false,  //是否显示导入JSON按钮
+            exportJsonButton: false,  //是否显示导出JSON器按钮
+            exportCodeButton: false,  //是否显示导出代码按钮
+            generateSFCButton: false,  //是否显示生成SFC按钮
+            formSaveButton: true, //是否显示保存按钮
+            formCloseButton: true,//是否显示关闭按钮
 
             presetCssCode: '',  //设计器预设CSS样式代码
-
             resetFormJson: false,  //是否在设计器初始化时将表单内容重置为空
           }
         }
@@ -151,7 +132,11 @@
 
         designer: createDesigner(this),
 
-        fieldList: []
+        fieldList: [],
+
+        formData: {},
+        formDataModel: {},
+        formDataName: {}
       }
     },
     provide() {
@@ -338,7 +323,107 @@
       exportJson() {
         this.$refs.toolbarRef.exportJson()
       },
+      /**
+       * 保存
+       */
+      fnSave() {
+        this.buildFormModel();
+        this.$emit('save', {
+          jsonData: this.getFormJson(),
+          formName: this.formDataName
+        })
+      },
+      /**
+       * 关闭
+       */
+       fnClose() {
+        this.$emit('close')
+      },
+      /**
+       * 获取表单数据
+       */
+      buildFormModel(widgetList = deepClone(this.designer.widgetList)) {
+        this.formData = {}; // 传入表单数据
+        this.formDataModel = {}; // 表单数据模型
+        this.formDataName = {}; // 表单数据名称
+        if (!!widgetList && (widgetList.length > 0)) {
+          widgetList.forEach((wItem) => {
+            this.buildDataFromWidget(wItem)
+          })
+        }
+      },
 
+      buildDataFromWidget(wItem) {
+        if (wItem.category === 'container') {
+          if (wItem.type === 'grid') {
+            if (!!wItem.cols && (wItem.cols.length > 0)) {
+              wItem.cols.forEach((childItem) => {
+                this.buildDataFromWidget(childItem)
+              })
+            }
+          } else if (wItem.type === 'table') {
+            if (!!wItem.rows && (wItem.rows.length > 0)) {
+              wItem.rows.forEach((rowItem) => {
+                if (!!rowItem.cols && (rowItem.cols.length > 0)) {
+                  rowItem.cols.forEach((colItem) => {
+                    this.buildDataFromWidget(colItem)
+                  })
+                }
+              })
+            }
+          } else if (wItem.type === 'tab') {
+            if (!!wItem.tabs && (wItem.tabs.length > 0)) {
+              wItem.tabs.forEach((tabItem) => {
+                if (!!tabItem.widgetList && (tabItem.widgetList.length > 0)) {
+                  tabItem.widgetList.forEach((childItem) => {
+                    this.buildDataFromWidget(childItem)
+                  })
+                }
+              })
+            }
+          } else if (wItem.type === 'sub-form') {
+            let subFormName = wItem.options.name
+            if (!this.formData.hasOwnProperty(subFormName)) {
+              let subFormDataRow = {}
+              if (wItem.options.showBlankRow) {
+                wItem.widgetList.forEach(subFormItem => {
+                  if (!!subFormItem.formItemFlag) {
+                    subFormDataRow[subFormItem.options.name] = subFormItem.options.defaultValue
+                  }
+                })
+
+                this.formDataModel[subFormName] = [subFormDataRow]
+              } else {
+                this.formDataModel[subFormName] = []
+              }
+            } else {
+              let initialValue = this.formData[subFormName]
+              this.formDataModel[subFormName] = deepClone(initialValue)
+            }
+            this.formDataName[wItem.options.name] = wItem.options.label
+          } else if ((wItem.type === 'grid-col') || (wItem.type === 'table-cell')) {
+            if (!!wItem.widgetList && (wItem.widgetList.length > 0)) {
+              wItem.widgetList.forEach((childItem) => {
+                this.buildDataFromWidget(childItem)
+              })
+            }
+          } else {  //自定义容器组件
+            if (!!wItem.widgetList && (wItem.widgetList.length > 0)) {
+              wItem.widgetList.forEach((childItem) => {
+                this.buildDataFromWidget(childItem)
+              })
+            }
+          }
+        } else if (!!wItem.formItemFlag) {
+          if (!this.formData.hasOwnProperty(wItem.options.name)) {
+            this.formDataModel[wItem.options.name] = wItem.options.defaultValue
+          } else {
+            let initialValue = this.formData[wItem.options.name]
+            this.formDataModel[wItem.options.name] = deepClone(initialValue)
+          }
+          this.formDataName[wItem.options.name] = wItem.options.label
+        }
+      },
       /**
        * 导出Vue/HTML代码
        */
